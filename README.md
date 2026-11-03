@@ -66,6 +66,23 @@ Release build on an iOS 27 simulator (Xcode 27.2):
 
 No JS runs until the scene delegate starts React Native.
 
-## Workaround
+## Workaround (this branch)
 
-The [`with-workaround`](https://github.com/pavsidhu/expo-scene-background-launch-repro/tree/with-workaround) branch adds a local Expo module, `modules/background-launch`. It's an `ExpoAppDelegateSubscriber` that starts the React host without a view if React Native hasn't started 2 seconds after launch. A scene that connects later reuses that host and adds its surface.
+[`modules/background-launch`](modules/background-launch) is a local Expo module with one `ExpoAppDelegateSubscriber`. Two seconds after `didFinishLaunching`, if the React host still doesn't exist, it calls `factory.rootViewFactory.initializeReactHost(...)` with no view. RN documents that method as "Initialize React Host/Bridge without creating a view". When a scene connects later, `startReactNative` → `RCTRootViewFactory.viewWithModuleName` finds the existing host (`createReactHostIfNeeded`) and only adds a surface. On a normal launch the scene delegate has already started React Native, so the subscriber does nothing.
+
+Same delayed-scene emulation as above, Release build, iOS 27 simulator:
+
+```
+14:48:13.400 [repro-native] scene willConnectTo received; delaying ExpoAppSceneDelegate by 12 s
+14:48:15.598 [BackgroundLaunch] React Native not started 2s after launch (connected scenes: 1); starting the React host without a view.
+14:48:16.325 [repro] js-started (AppState: active)
+14:48:26.000 [repro-native] calling ExpoAppSceneDelegate.scene(_:willConnectTo:) now
+14:48:26.115 Running "main"
+```
+
+JS runs about 3 s after launch, before the scene connects. The scene then renders the app on the same host, with a single `js-started`.
+
+Limitations:
+- Apps that use `expo-updates` must start its `AppController` before creating the host, so the host loads the right launch asset. This repro doesn't use `expo-updates`.
+- If the host was started without a scene and a URL later opens the app, the host's launch options don't contain that URL, so `Linking.getInitialURL()` may not see it. The URL event is still emitted.
+- The 2 s delay is a heuristic.
